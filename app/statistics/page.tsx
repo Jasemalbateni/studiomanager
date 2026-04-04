@@ -85,6 +85,16 @@ export default function StatisticsPage() {
     return { cat, count: catEvts.length, amount };
   });
 
+  // Group attended events by name, sorted by count descending
+  // Group attended events by name, sorted by count descending
+  const nameCountMap: Record<string, number> = {};
+  myAttended.forEach(e => {
+    const name = resolveEventValues(e.event, e.event.schedule).name;
+    nameCountMap[name] = (nameCountMap[name] ?? 0) + 1;
+  });
+  const nameSummary = (Object.entries(nameCountMap) as [string, number][])
+    .sort((a, b) => b[1] - a[1]);
+
   const crewCatCount = (techId: string, cat: Category) =>
     crewEvents.filter(e => e.technician_id === techId && resolveEventValues(e.event, e.event.schedule).category === cat).length;
 
@@ -147,10 +157,12 @@ export default function StatisticsPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <StatCard label="حاضر"  value={myEvents.filter(e => e.status === 'present').length} accent />
-              <StatCard label="متأخر" value={myEvents.filter(e => e.status === 'late').length} />
-              <StatCard label="غائب"  value={myEvents.filter(e => e.status === 'absent').length} />
-              <StatCard label="غادر"  value={myEvents.filter(e => e.status === 'left_early').length} />
+              <StatCard label="حاضر"             value={myEvents.filter(e => e.status === 'present').length} accent />
+              <StatCard label="متأخر"            value={myEvents.filter(e => e.status === 'late').length} />
+              <StatCard label="غائب"             value={myEvents.filter(e => e.status === 'absent').length} />
+              <StatCard label="غادر أثناء العمل" value={myEvents.filter(e => e.status === 'left_early').length} />
+              <StatCard label="إجازة"            value={myEvents.filter(e => e.status === 'on_leave').length} />
+              <StatCard label="معتذر"            value={myEvents.filter(e => e.status === 'excused').length} />
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -175,6 +187,24 @@ export default function StatisticsPage() {
                 </div>
               ))}
             </div>
+
+            {nameSummary.length > 0 && (
+              <>
+                <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wide text-right">ملخص حسب اسم الحدث</h3>
+                <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2.5 border-b bg-muted/40">
+                    <p className="text-xs font-bold text-muted-foreground">العدد</p>
+                    <p className="text-xs font-bold text-muted-foreground">اسم الحدث</p>
+                  </div>
+                  {nameSummary.map(([name, count], idx) => (
+                    <div key={name} className={cn('flex items-center justify-between px-4 py-3', idx < nameSummary.length - 1 && 'border-b')}>
+                      <span className="text-sm font-extrabold text-[#008D8B]">{count}</span>
+                      <span className="text-sm font-bold text-right flex-1 ms-3">{name}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
@@ -273,8 +303,8 @@ export default function StatisticsPage() {
                           {tech.name.charAt(0)}
                         </div>
                       </div>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {(['present', 'absent', 'late', 'left_early'] as AttendanceStatus[]).map(s => (
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {(['present', 'absent', 'late', 'left_early', 'on_leave', 'excused'] as AttendanceStatus[]).map(s => (
                           <div key={s} className={cn('text-center py-1.5 rounded-lg text-xs font-bold', ATTENDANCE_COLORS[s])}>
                             <p className="text-base font-extrabold">{techEvts.filter(e => e.status === s).length}</p>
                             <p className="text-[10px]">{ATTENDANCE_LABELS[s].split(' ')[0]}</p>
@@ -309,10 +339,12 @@ export default function StatisticsPage() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
-                      <StatCard label="المُكلَّف بهم" value={techEvts.length} />
-                      <StatCard label="حاضر" value={techEvts.filter(e => e.status === 'present').length} accent />
-                      <StatCard label="غائب" value={techEvts.filter(e => e.status === 'absent').length} />
-                      <StatCard label="متأخر" value={techEvts.filter(e => e.status === 'late').length} />
+                      <StatCard label="المُكلَّف بهم"       value={techEvts.length} />
+                      <StatCard label="حاضر"              value={techEvts.filter(e => e.status === 'present').length} accent />
+                      <StatCard label="غائب"              value={techEvts.filter(e => e.status === 'absent').length} />
+                      <StatCard label="متأخر"             value={techEvts.filter(e => e.status === 'late').length} />
+                      <StatCard label="غادر أثناء العمل"  value={techEvts.filter(e => e.status === 'left_early').length} />
+                      <StatCard label="إجازة / معتذر"     value={techEvts.filter(e => e.status === 'on_leave' || e.status === 'excused').length} />
                     </div>
 
                     <div className="grid grid-cols-3 gap-2">

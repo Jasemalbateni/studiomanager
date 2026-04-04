@@ -98,6 +98,14 @@ export function PrintContent() {
   const countCat = (cat: Category) =>
     attended.filter(e => resolveEventValues(e.event, e.event.schedule).category === cat).length;
 
+  const nameCountMap: Record<string, number> = {};
+  attended.forEach(e => {
+    const name = resolveEventValues(e.event, e.event.schedule).name;
+    nameCountMap[name] = (nameCountMap[name] ?? 0) + 1;
+  });
+  const nameSummary = (Object.entries(nameCountMap) as [string, number][])
+    .sort((a, b) => b[1] - a[1]);
+
   const today = format(new Date(), 'yyyy-MM-dd');
 
   const ATTENDANCE_BADGE: Record<string, { bg: string; color: string }> = {
@@ -105,6 +113,8 @@ export function PrintContent() {
     late:       { bg: '#fef3c7', color: '#92400e' },
     absent:     { bg: '#fee2e2', color: '#991b1b' },
     left_early: { bg: '#ffedd5', color: '#9a3412' },
+    on_leave:   { bg: '#e0f2fe', color: '#0369a1' },
+    excused:    { bg: '#ede9fe', color: '#6d28d9' },
   };
 
   if (loading) {
@@ -166,12 +176,12 @@ export function PrintContent() {
 
           {/* Attendance cards */}
           {[
-            { label: 'حاضر',           value: countStatus('present'),    bg: '#d1fae5', color: '#065f46' },
-            { label: 'متأخر',          value: countStatus('late'),       bg: '#fef3c7', color: '#92400e' },
-            { label: 'غائب',           value: countStatus('absent'),     bg: '#fee2e2', color: '#991b1b' },
+            { label: 'حاضر',             value: countStatus('present'),    bg: '#d1fae5', color: '#065f46' },
+            { label: 'متأخر',            value: countStatus('late'),       bg: '#fef3c7', color: '#92400e' },
+            { label: 'غائب',             value: countStatus('absent'),     bg: '#fee2e2', color: '#991b1b' },
             { label: 'غادر أثناء العمل', value: countStatus('left_early'), bg: '#ffedd5', color: '#9a3412' },
-            { label: 'إجمالي الأحداث', value: myEvents.length,           bg: '#f3f4f6', color: '#374151' },
-            { label: 'مباشر',          value: attended.filter(e => resolveEventValues(e.event, e.event.schedule).broadcast_mode === 'live').length, bg: '#fee2e2', color: '#991b1b' },
+            { label: 'إجازة',            value: countStatus('on_leave'),   bg: '#e0f2fe', color: '#0369a1' },
+            { label: 'معتذر',            value: countStatus('excused'),    bg: '#ede9fe', color: '#6d28d9' },
           ].map(c => (
             <div key={c.label} style={{ background: c.bg, borderRadius: 10, padding: '3.5mm 4mm' }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: c.color, textAlign: 'right' }}>{c.value}</div>
@@ -193,6 +203,31 @@ export function PrintContent() {
             </div>
           ))}
         </div>
+
+        {/* ── Event-name summary ── */}
+        {nameSummary.length > 0 && (
+          <div style={{ marginBottom: '6mm' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: '2mm', textAlign: 'right' }}>
+              ملخص حسب اسم الحدث
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead>
+                <tr style={{ background: '#008D8B', color: '#fff' }}>
+                  <th style={{ padding: '2.5mm 3.5mm', textAlign: 'right', fontWeight: 700 }}>اسم الحدث</th>
+                  <th style={{ padding: '2.5mm 3.5mm', textAlign: 'center', fontWeight: 700, width: '20mm' }}>العدد</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nameSummary.map(([name, count], idx) => (
+                  <tr key={name} style={{ background: idx % 2 === 0 ? '#fff' : '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                    <td style={{ padding: '2mm 3.5mm', fontWeight: 600 }}>{name}</td>
+                    <td style={{ padding: '2mm 3.5mm', textAlign: 'center', fontWeight: 800, color: '#008D8B' }}>{count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* ── Events table ── */}
         <div style={{ marginBottom: '5mm' }}>

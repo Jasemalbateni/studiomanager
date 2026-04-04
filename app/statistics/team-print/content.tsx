@@ -41,6 +41,8 @@ const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   late:       { bg: '#fef3c7', color: '#92400e' },
   absent:     { bg: '#fee2e2', color: '#991b1b' },
   left_early: { bg: '#ffedd5', color: '#9a3412' },
+  on_leave:   { bg: '#e0f2fe', color: '#0369a1' },
+  excused:    { bg: '#ede9fe', color: '#6d28d9' },
 };
 
 export function TeamPrintContent() {
@@ -96,6 +98,8 @@ export function TeamPrintContent() {
   const grandAbsent    = crewEvents.filter(e => e.status === 'absent').length;
   const grandLate      = crewEvents.filter(e => e.status === 'late').length;
   const grandLeftEarly = crewEvents.filter(e => e.status === 'left_early').length;
+  const grandOnLeave   = crewEvents.filter(e => e.status === 'on_leave').length;
+  const grandExcused   = crewEvents.filter(e => e.status === 'excused').length;
 
   if (loading) {
     return (
@@ -144,12 +148,14 @@ export function TeamPrintContent() {
         {/* Summary cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3mm', marginBottom: '6mm' }}>
           {[
-            { label: 'إجمالي الفنيين',           value: techsWithData.length, bg: 'linear-gradient(135deg,#008D8B,#569691)', color: '#fff', big: true },
-            { label: 'إجمالي عدد الأحداث',       value: grandTotal,     bg: '#f3f4f6', color: '#374151' },
-            { label: 'إجمالي الحضور',             value: grandPresent,   bg: '#d1fae5', color: '#065f46' },
-            { label: 'إجمالي الغياب',             value: grandAbsent,    bg: '#fee2e2', color: '#991b1b' },
-            { label: 'إجمالي التأخير',            value: grandLate,      bg: '#fef3c7', color: '#92400e' },
+            { label: 'إجمالي الفنيين',             value: techsWithData.length, bg: 'linear-gradient(135deg,#008D8B,#569691)', color: '#fff', big: true },
+            { label: 'إجمالي عدد الأحداث',         value: grandTotal,     bg: '#f3f4f6', color: '#374151' },
+            { label: 'إجمالي الحضور',               value: grandPresent,   bg: '#d1fae5', color: '#065f46' },
+            { label: 'إجمالي الغياب',               value: grandAbsent,    bg: '#fee2e2', color: '#991b1b' },
+            { label: 'إجمالي التأخير',              value: grandLate,      bg: '#fef3c7', color: '#92400e' },
             { label: 'إجمالي المغادرة أثناء العمل', value: grandLeftEarly, bg: '#ffedd5', color: '#9a3412' },
+            { label: 'إجمالي الإجازات',             value: grandOnLeave,   bg: '#e0f2fe', color: '#0369a1' },
+            { label: 'إجمالي الاعتذارات',           value: grandExcused,   bg: '#ede9fe', color: '#6d28d9' },
           ].map((c, i) => (
             <div key={i} style={{ background: c.bg, borderRadius: 10, padding: '4mm', gridColumn: i === 0 ? 'span 3' : undefined }}>
               <div style={{ fontSize: c.big ? 26 : 22, fontWeight: 800, color: c.color, textAlign: 'right' }}>{c.value}</div>
@@ -166,18 +172,20 @@ export function TeamPrintContent() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
               <tr style={{ background: '#008D8B', color: '#fff' }}>
-                {['الاسم', 'الدور', 'عدد الأحداث', 'الحضور', 'الغياب', 'التأخير', 'غادر أثناء العمل'].map(h => (
+                {['الاسم', 'الدور', 'عدد الأحداث', 'الحضور', 'الغياب', 'التأخير', 'غادر', 'إجازة', 'معتذر'].map(h => (
                   <th key={h} style={{ padding: '3mm 3.5mm', textAlign: 'right', fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {techsWithData.map((tech, idx) => {
-                const total  = totalFor(tech.id);
-                const pres   = countFor(tech.id, 'present');
-                const abs    = countFor(tech.id, 'absent');
-                const late   = countFor(tech.id, 'late');
-                const left   = countFor(tech.id, 'left_early');
+                const total    = totalFor(tech.id);
+                const pres     = countFor(tech.id, 'present');
+                const abs      = countFor(tech.id, 'absent');
+                const late     = countFor(tech.id, 'late');
+                const left     = countFor(tech.id, 'left_early');
+                const onLeave  = countFor(tech.id, 'on_leave');
+                const excused  = countFor(tech.id, 'excused');
                 return (
                   <tr key={tech.id} style={{ background: idx % 2 === 0 ? '#fff' : '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
                     <td style={{ padding: '2.5mm 3.5mm', fontWeight: 700 }}>{tech.name}</td>
@@ -195,6 +203,12 @@ export function TeamPrintContent() {
                     <td style={{ padding: '2.5mm 3.5mm', textAlign: 'center' }}>
                       <span style={{ background: '#ffedd5', color: '#9a3412', padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700 }}>{left}</span>
                     </td>
+                    <td style={{ padding: '2.5mm 3.5mm', textAlign: 'center' }}>
+                      <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700 }}>{onLeave}</span>
+                    </td>
+                    <td style={{ padding: '2.5mm 3.5mm', textAlign: 'center' }}>
+                      <span style={{ background: '#ede9fe', color: '#6d28d9', padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700 }}>{excused}</span>
+                    </td>
                   </tr>
                 );
               })}
@@ -207,6 +221,8 @@ export function TeamPrintContent() {
                 <td style={{ padding: '3mm 3.5mm', textAlign: 'center', fontWeight: 800, color: '#991b1b' }}>{grandAbsent}</td>
                 <td style={{ padding: '3mm 3.5mm', textAlign: 'center', fontWeight: 800, color: '#92400e' }}>{grandLate}</td>
                 <td style={{ padding: '3mm 3.5mm', textAlign: 'center', fontWeight: 800, color: '#9a3412' }}>{grandLeftEarly}</td>
+                <td style={{ padding: '3mm 3.5mm', textAlign: 'center', fontWeight: 800, color: '#0369a1' }}>{grandOnLeave}</td>
+                <td style={{ padding: '3mm 3.5mm', textAlign: 'center', fontWeight: 800, color: '#6d28d9' }}>{grandExcused}</td>
               </tr>
             </tfoot>
           </table>

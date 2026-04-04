@@ -9,14 +9,23 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, subtitle, action, className }: PageHeaderProps) {
   return (
-    <header className={cn('px-4 pt-6 pb-3 flex items-start justify-between', className)}>
-      <div>
-        <h1 className="text-xl font-bold text-foreground leading-tight">{title}</h1>
-        {subtitle && (
-          <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>
+    <header className={cn('px-4 pt-6 pb-4 border-b bg-background', className)}>
+      {/* Relative container so the action can sit absolutely at the end without pushing the title off-center */}
+      <div className="relative flex items-center justify-center min-h-[44px]">
+        <div className="text-center">
+          <h1 className="text-xl font-bold text-foreground leading-tight">{title}</h1>
+          {subtitle && (
+            <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>
+          )}
+        </div>
+
+        {/* Action button — positioned on the left (= RTL end side) */}
+        {action && (
+          <div className="absolute left-0 top-1/2 -translate-y-1/2">
+            {action}
+          </div>
         )}
       </div>
-      {action && <div className="ml-2 flex-shrink-0">{action}</div>}
     </header>
   );
 }

@@ -289,7 +289,7 @@ export function EditEventSheet({ event, schedule, crew, onClose, onSaved }: Edit
                 <Plus size={14} />
                 إضافة فني جديد
               </button>
-              <Label className="text-right">الفنيون</Label>
+              <Label className="text-right">الفنيون المعينون فعليًا</Label>
             </div>
 
             {/* Crew scope — only relevant for one_time event mode */}
@@ -332,9 +332,16 @@ export function EditEventSheet({ event, schedule, crew, onClose, onSaved }: Edit
                 />
               </div>
             )}
-            <p className="text-xs text-muted-foreground text-right">
-              اضغط على الاسم لتحديده أو إلغاء تحديده
-            </p>
+            <div className="flex items-center gap-3 justify-end text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#008D8B]" />
+                مُعيَّن
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400" />
+                مُقترح (يعمل هذا اليوم)
+              </span>
+            </div>
           </div>
 
           {error && (

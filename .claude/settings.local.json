@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx shadcn@latest add select badge dialog sheet tabs)"
+      "Bash(npx shadcn@latest add select badge dialog sheet tabs)",
+      "Bash(grep -rn \"\\\\.select\\(\" /c/Users/asus/studiomanager --include=\"*.ts\" --include=\"*.tsx\" ! -path \"*/node_modules/*\" ! -path \"*/.next/*\")"
     ]
   }
 }

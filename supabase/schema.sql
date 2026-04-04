@@ -95,7 +95,7 @@ CREATE INDEX IF NOT EXISTS idx_event_crew_event_id ON event_crew(event_id);
 CREATE TABLE IF NOT EXISTS my_attendance (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id    UUID NOT NULL REFERENCES event_instances(id) ON DELETE CASCADE,
-  status      TEXT NOT NULL CHECK (status IN ('present', 'absent', 'late', 'left_early')),
+  status      TEXT NOT NULL CHECK (status IN ('present', 'absent', 'late', 'left_early', 'on_leave', 'excused')),
   notes       TEXT,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (event_id)
@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS technician_attendance (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id        UUID NOT NULL REFERENCES event_instances(id) ON DELETE CASCADE,
   technician_id   UUID NOT NULL REFERENCES technicians(id) ON DELETE CASCADE,
-  status          TEXT NOT NULL CHECK (status IN ('present', 'absent', 'late', 'left_early')),
+  status          TEXT NOT NULL CHECK (status IN ('present', 'absent', 'late', 'left_early', 'on_leave', 'excused')),
   notes           TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (event_id, technician_id)

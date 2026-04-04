@@ -12,7 +12,7 @@ import { resolveEventValues } from '@/lib/recurrence';
 import { arDate } from '@/lib/ar';
 import {
   CATEGORY_LABELS, CATEGORY_COLORS, BROADCAST_COLORS,
-  BROADCAST_LABELS, ATTENDANCE_COLORS, ATTENDANCE_LABELS, ATTENDANCE_SHORT
+  BROADCAST_LABELS, ATTENDANCE_COLORS, ATTENDANCE_ACTIVE_COLORS, ATTENDANCE_SHORT
 } from '@/lib/constants';
 import { AttendanceStatus, Category, BroadcastMode } from '@/types';
 import { cn } from '@/lib/utils';
@@ -29,7 +29,16 @@ interface AttendanceItem {
   status: AttendanceStatus | null;
 }
 
-const MY_STATUSES: AttendanceStatus[] = ['present', 'absent', 'late', 'left_early'];
+const ALL_STATUSES: AttendanceStatus[] = ['present', 'absent', 'late', 'left_early', 'on_leave', 'excused'];
+
+const CARD_BORDER: Partial<Record<AttendanceStatus, string>> = {
+  present:    'border-emerald-200 bg-emerald-50/50',
+  absent:     'border-red-200',
+  late:       'border-amber-200',
+  left_early: 'border-orange-200',
+  on_leave:   'border-sky-200',
+  excused:    'border-violet-200',
+};
 
 export default function AttendancePage() {
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -43,45 +52,96 @@ export default function AttendancePage() {
   async function loadItems() {
     setLoading(true);
     const start = format(startOfMonth(parseISO(month + '-01')), 'yyyy-MM-dd');
-    const end = format(endOfMonth(parseISO(month + '-01')), 'yyyy-MM-dd');
+    const end   = format(endOfMonth(parseISO(month + '-01')),   'yyyy-MM-dd');
 
-    const { data } = await supabase
+    // Step 1: fetch events for the month
+    const { data: eventsData } = await supabase
       .from('event_instances')
-      .select('*, schedule:program_schedules(*), my_attendance(id, status)')
+      .select('*, schedule:program_schedules(*)')
       .gte('date', start)
       .lte('date', end)
       .eq('is_cancelled', false)
       .order('date', { ascending: true });
 
-    if (data) {
-      setItems(data.map((item: any) => {
-        const r = resolveEventValues(item, item.schedule);
-        return {
-          eventId: item.id, date: item.date,
-          name: r.name, category: r.category as Category, broadcast_mode: r.broadcast_mode as BroadcastMode,
-          start_time: r.start_time, end_time: r.end_time,
-          attendanceId: item.my_attendance?.[0]?.id ?? null,
-          status: item.my_attendance?.[0]?.status ?? null,
-        };
-      }));
+    if (!eventsData || eventsData.length === 0) {
+      setItems([]);
+      setLoading(false);
+      return;
     }
+
+    // Step 2: fetch my_attendance only for the event IDs we just loaded.
+    // We deliberately avoid using PostgREST embedded selects for my_attendance
+    // because the UNIQUE(event_id) constraint causes PostgREST v12+ to return
+    // the record as a plain object rather than an array, which breaks [0] indexing
+    // on reload and makes the saved status appear missing.
+    const eventIds = eventsData.map((e: any) => e.id);
+    const { data: attData } = await supabase
+      .from('my_attendance')
+      .select('id, event_id, status')
+      .in('event_id', eventIds);
+
+    // Build a map for O(1) lookups
+    const attMap = new Map<string, { id: string; status: AttendanceStatus }>(
+      (attData ?? []).map((a: any) => [a.event_id, { id: a.id, status: a.status as AttendanceStatus }])
+    );
+
+    setItems(eventsData.map((item: any) => {
+      const r   = resolveEventValues(item, item.schedule);
+      const att = attMap.get(item.id) ?? null;
+      return {
+        eventId:       item.id,
+        date:          item.date,
+        name:          r.name,
+        category:      r.category as Category,
+        broadcast_mode: r.broadcast_mode as BroadcastMode,
+        start_time:    r.start_time,
+        end_time:      r.end_time,
+        attendanceId:  att?.id   ?? null,
+        status:        att?.status ?? null,
+      };
+    }));
+
     setLoading(false);
   }
 
   async function handleStatus(item: AttendanceItem, status: AttendanceStatus) {
     setUpdating(item.eventId);
+
     if (item.attendanceId) {
       if (item.status === status) {
+        // Tap active status again → deselect
         await supabase.from('my_attendance').delete().eq('id', item.attendanceId);
-        setItems(prev => prev.map(i => i.eventId === item.eventId ? { ...i, attendanceId: null, status: null } : i));
+        setItems(prev => prev.map(i =>
+          i.eventId === item.eventId ? { ...i, attendanceId: null, status: null } : i
+        ));
       } else {
-        const { data } = await supabase.from('my_attendance').update({ status }).eq('id', item.attendanceId).select().single();
-        setItems(prev => prev.map(i => i.eventId === item.eventId ? { ...i, status: data?.status ?? null } : i));
+        // Switch to a different status
+        const { data } = await supabase
+          .from('my_attendance')
+          .update({ status })
+          .eq('id', item.attendanceId)
+          .select('id, status')
+          .single();
+        if (data) {
+          setItems(prev => prev.map(i =>
+            i.eventId === item.eventId ? { ...i, status: data.status as AttendanceStatus } : i
+          ));
+        }
       }
     } else {
-      const { data } = await supabase.from('my_attendance').insert({ event_id: item.eventId, status }).select().single();
-      setItems(prev => prev.map(i => i.eventId === item.eventId ? { ...i, attendanceId: data?.id ?? null, status: data?.status ?? null } : i));
+      // No existing record — create one
+      const { data } = await supabase
+        .from('my_attendance')
+        .insert({ event_id: item.eventId, status })
+        .select('id, status')
+        .single();
+      if (data) {
+        setItems(prev => prev.map(i =>
+          i.eventId === item.eventId ? { ...i, attendanceId: data.id, status: data.status as AttendanceStatus } : i
+        ));
+      }
     }
+
     setUpdating(null);
   }
 
@@ -108,7 +168,7 @@ export default function AttendancePage() {
       <div className="px-4 pb-4">
         {loading ? (
           <div className="space-y-4 mt-2">
-            {[1, 2, 3].map(i => <div key={i} className="h-40 bg-muted rounded-2xl animate-pulse" />)}
+            {[1, 2, 3].map(i => <div key={i} className="h-44 bg-muted rounded-2xl animate-pulse" />)}
           </div>
         ) : items.length === 0 ? (
           <div className="mt-8 text-center py-12">
@@ -128,16 +188,14 @@ export default function AttendancePage() {
                   )}>
                     {isToday ? `● اليوم — ${arDate(parseISO(date))}` : arDate(parseISO(date))}
                   </p>
+
                   <div className="space-y-2">
                     {dayItems.map(item => (
                       <div
                         key={item.eventId}
                         className={cn(
                           'bg-white rounded-2xl border p-4 shadow-sm',
-                          item.status === 'present'    && 'border-emerald-200 bg-emerald-50/50',
-                          item.status === 'absent'     && 'border-red-200',
-                          item.status === 'late'       && 'border-amber-200',
-                          item.status === 'left_early' && 'border-orange-200',
+                          item.status ? CARD_BORDER[item.status] : ''
                         )}
                       >
                         {/* Event info */}
@@ -148,7 +206,9 @@ export default function AttendancePage() {
                                 {ATTENDANCE_SHORT[item.status]}
                               </span>
                             ) : (
-                              <span className="text-xs text-muted-foreground">غير مُسجَّل</span>
+                              <span className="text-xs text-muted-foreground border border-dashed rounded-full px-2.5 py-1">
+                                غير مُسجَّل
+                              </span>
                             )}
                           </div>
                           <div className="flex-1 min-w-0 text-right">
@@ -161,13 +221,15 @@ export default function AttendancePage() {
                               </span>
                             </div>
                             <p className="font-bold text-sm text-foreground">{item.name}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5" dir="ltr">{item.start_time} – {item.end_time}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5" dir="ltr">
+                              {item.start_time} – {item.end_time}
+                            </p>
                           </div>
                         </div>
 
-                        {/* Status chips */}
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {MY_STATUSES.map(s => (
+                        {/* Status buttons — 3×2 grid, active button shows solid colour */}
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {ALL_STATUSES.map(s => (
                             <button
                               key={s}
                               onClick={() => handleStatus(item, s)}
@@ -175,7 +237,7 @@ export default function AttendancePage() {
                               className={cn(
                                 'py-2 rounded-xl border text-xs font-bold transition-colors touch-target',
                                 item.status === s
-                                  ? ATTENDANCE_COLORS[s]
+                                  ? ATTENDANCE_ACTIVE_COLORS[s]
                                   : 'bg-white text-muted-foreground border-border'
                               )}
                             >

@@ -31,32 +31,48 @@ export default function HomePage() {
     const upcomingEnd = format(addDays(today, 7), 'yyyy-MM-dd');
     const todayStr = format(today, 'yyyy-MM-dd');
 
-    const { data: monthData } = await supabase
-      .from('event_instances')
-      .select('*, schedule:program_schedules(*), crew:event_crew(count), my_attendance(status)')
-      .gte('date', monthStart)
-      .lte('date', monthEnd)
-      .eq('is_cancelled', false)
-      .order('date', { ascending: true });
+    // Fetch events without embedded my_attendance to avoid PostgREST v12
+    // UNIQUE-constraint embedding bug (returns object instead of array).
+    const [{ data: monthData }, { data: upcomingData }, { data: pricingData }] = await Promise.all([
+      supabase
+        .from('event_instances')
+        .select('*, schedule:program_schedules(*), crew:event_crew(count)')
+        .gte('date', monthStart).lte('date', monthEnd)
+        .eq('is_cancelled', false).order('date', { ascending: true }),
+      supabase
+        .from('event_instances')
+        .select('*, schedule:program_schedules(*), crew:event_crew(count)')
+        .gte('date', todayStr).lte('date', upcomingEnd)
+        .eq('is_cancelled', false).order('date', { ascending: true }).limit(5),
+      supabase.from('pricing_settings').select('*'),
+    ]);
 
-    const { data: upcomingData } = await supabase
-      .from('event_instances')
-      .select('*, schedule:program_schedules(*), crew:event_crew(count), my_attendance(status)')
-      .gte('date', todayStr)
-      .lte('date', upcomingEnd)
-      .eq('is_cancelled', false)
-      .order('date', { ascending: true })
-      .limit(5);
+    // Collect all unique event IDs and fetch my_attendance in one query
+    const allIds = [...new Set([
+      ...(monthData ?? []).map((e: any) => e.id),
+      ...(upcomingData ?? []).map((e: any) => e.id),
+    ])];
+    let attMap = new Map<string, string>();
+    if (allIds.length > 0) {
+      const { data: attData } = await supabase
+        .from('my_attendance').select('event_id, status').in('event_id', allIds);
+      attMap = new Map((attData ?? []).map((a: any) => [a.event_id, a.status]));
+    }
 
-    const { data: pricingData } = await supabase.from('pricing_settings').select('*');
-
-    if (monthData)   setEvents(buildDisplay(monthData));
-    if (upcomingData) setUpcomingEvents(buildDisplay(upcomingData));
+    if (monthData)   setEvents(buildDisplay(monthData, attMap));
+    if (upcomingData) {
+      // Secondary sort by start_time within each day (DB only orders by date)
+      const upcoming = buildDisplay(upcomingData, attMap).sort((a, b) => {
+        const d = a.date.localeCompare(b.date);
+        return d !== 0 ? d : a.start_time.localeCompare(b.start_time);
+      });
+      setUpcomingEvents(upcoming);
+    }
     if (pricingData)  setPricing(pricingData);
     setLoading(false);
   }
 
-  function buildDisplay(raw: any[]): EventDisplay[] {
+  function buildDisplay(raw: any[], attMap: Map<string, string> = new Map()): EventDisplay[] {
     return raw.map(item => {
       const schedule = item.schedule;
       const resolved = schedule ? resolveEventValues(item, schedule) : {
@@ -73,7 +89,7 @@ export default function HomePage() {
         start_time: resolved.start_time, end_time: resolved.end_time,
         is_overridden: item.is_overridden, is_cancelled: item.is_cancelled,
         crew_count: item.crew?.[0]?.count ?? 0,
-        my_attendance_status: item.my_attendance?.[0]?.status ?? null,
+        my_attendance_status: (attMap.get(item.id) ?? null) as any,
         bonus_amount: resolved.bonus_amount,
       };
     });
@@ -137,7 +153,7 @@ export default function HomePage() {
           {[
             { label: 'الإجمالي',  value: events.length },
             { label: 'نشرات',    value: events.filter(e => e.category === 'bulletin').length },
-            { label: 'تقارير',   value: events.filter(e => e.category === 'short_briefing').length },
+            { label: 'مواجيز',   value: events.filter(e => e.category === 'short_briefing').length },
             { label: 'برامج',    value: events.filter(e => e.category === 'program').length },
           ].map(stat => (
             <div key={stat.label} className="bg-white rounded-2xl border p-3 text-center shadow-sm">

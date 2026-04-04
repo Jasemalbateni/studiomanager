@@ -83,7 +83,7 @@ export function ScheduleForm({ technicians, initialData, onSuccess }: ScheduleFo
     valid_from: initialData?.valid_from ?? today,
     valid_until: initialData?.valid_until ?? '',
     crew_ids: initialData?.crew_ids ?? [],
-    bonus_amount: initialData?.bonus_amount ?? null,
+    bonus_amount: initialData?.bonus_amount ?? 10,
   });
   const [allTechnicians, setAllTechnicians] = useState<Technician[]>(technicians);
   const [showAddTech, setShowAddTech] = useState(false);

@@ -7,15 +7,16 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { parseISO, format } from 'date-fns';
 import {
-  ArrowRight, Clock, Users, AlertCircle, CheckCircle2,
-  Edit2, Copy, ChevronDown, ChevronUp, CalendarDays, X, Trash2
+  ArrowRight, Clock, Users, AlertCircle,
+  Edit2, Copy, ChevronDown, ChevronUp, CalendarDays, X, Trash2, UserPlus
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { resolveEventValues } from '@/lib/recurrence';
 import { arDate, arDateLong } from '@/lib/ar';
 import {
   CATEGORY_LABELS, BROADCAST_LABELS, CATEGORY_COLORS,
-  BROADCAST_COLORS, ATTENDANCE_COLORS, ATTENDANCE_LABELS
+  BROADCAST_COLORS, ATTENDANCE_COLORS, ATTENDANCE_LABELS,
+  ATTENDANCE_ACTIVE_COLORS, ATTENDANCE_SHORT
 } from '@/lib/constants';
 import { TechAttendanceRow } from '@/components/attendance/tech-attendance-row';
 import { EditEventSheet } from '@/components/events/edit-event-sheet';
@@ -30,6 +31,8 @@ interface EventDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
+const ATTENDANCE_OPTIONS: AttendanceStatus[] = ['present', 'absent', 'late', 'left_early', 'on_leave', 'excused'];
+
 export default function EventDetailPage({ params }: EventDetailPageProps) {
   const { id } = use(params);
   const router = useRouter();
@@ -38,11 +41,12 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [event, setEvent] = useState<EventInstance | null>(null);
   const [schedule, setSchedule] = useState<ProgramSchedule | null>(null);
   const [crew, setCrew] = useState<(EventCrew & { technician: Technician })[]>([]);
+  const [allTechnicians, setAllTechnicians] = useState<Technician[]>([]);
   const [myAttendance, setMyAttendance] = useState<MyAttendance | null>(null);
   const [techAttendance, setTechAttendance] = useState<TechnicianAttendance[]>([]);
   const [loading, setLoading] = useState(true);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
-  const [showCrewSection, setShowCrewSection] = useState(true);
+  const [showCrewAttendance, setShowCrewAttendance] = useState(true);
   const [showEditSheet, setShowEditSheet] = useState(false);
   const [showCancelSheet, setShowCancelSheet] = useState(false);
   const [showDeleteSheet, setShowDeleteSheet] = useState(false);
@@ -57,17 +61,25 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     if (!eventData) { router.push('/events'); return; }
     setEvent(eventData);
 
-    const { data: scheduleData } = await supabase.from('program_schedules').select('*').eq('id', eventData.schedule_id).single();
+    const [
+      { data: scheduleData },
+      { data: crewData },
+      { data: myAtt },
+      { data: techAtt },
+      { data: allTechs },
+    ] = await Promise.all([
+      supabase.from('program_schedules').select('*').eq('id', eventData.schedule_id).single(),
+      supabase.from('event_crew').select('*, technician:technicians(*)').eq('event_id', id),
+      supabase.from('my_attendance').select('*').eq('event_id', id).maybeSingle(),
+      supabase.from('technician_attendance').select('*').eq('event_id', id),
+      supabase.from('technicians').select('*').eq('status', 'active').order('name'),
+    ]);
+
     setSchedule(scheduleData);
-
-    const { data: crewData } = await supabase.from('event_crew').select('*, technician:technicians(*)').eq('event_id', id);
     setCrew((crewData as any) ?? []);
-
-    const { data: myAtt } = await supabase.from('my_attendance').select('*').eq('event_id', id).maybeSingle();
     setMyAttendance(myAtt);
-
-    const { data: techAtt } = await supabase.from('technician_attendance').select('*').eq('event_id', id);
     setTechAttendance(techAtt ?? []);
+    setAllTechnicians(allTechs ?? []);
 
     setLoading(false);
   }
@@ -76,15 +88,17 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     setAttendanceLoading(true);
     if (myAttendance) {
       if (myAttendance.status === status) {
+        // Clicking active status again → deselect
         await supabase.from('my_attendance').delete().eq('id', myAttendance.id);
         setMyAttendance(null);
       } else {
+        // Switch to a different status
         const { data } = await supabase.from('my_attendance').update({ status }).eq('id', myAttendance.id).select().single();
-        setMyAttendance(data);
+        if (data) setMyAttendance(data);
       }
     } else {
       const { data } = await supabase.from('my_attendance').insert({ event_id: id, status }).select().single();
-      setMyAttendance(data);
+      if (data) setMyAttendance(data);
     }
     setAttendanceLoading(false);
   }
@@ -93,7 +107,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     const existing = techAttendance.find(a => a.technician_id === techId);
     if (existing) {
       const { data } = await supabase.from('technician_attendance').update({ status }).eq('id', existing.id).select().single();
-      setTechAttendance(prev => prev.map(a => a.technician_id === techId ? data! : a));
+      if (data) setTechAttendance(prev => prev.map(a => a.technician_id === techId ? data : a));
     } else {
       const { data } = await supabase.from('technician_attendance').insert({ event_id: id, technician_id: techId, status }).select().single();
       if (data) setTechAttendance(prev => [...prev, data]);
@@ -167,7 +181,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       <div className="px-4 py-6 space-y-4">
         <div className="h-8 bg-muted rounded-xl animate-pulse w-40" />
         <div className="h-40 bg-muted rounded-2xl animate-pulse" />
-        <div className="h-24 bg-muted rounded-2xl animate-pulse" />
+        <div className="h-28 bg-muted rounded-2xl animate-pulse" />
         <div className="h-48 bg-muted rounded-2xl animate-pulse" />
       </div>
     );
@@ -177,7 +191,12 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const dateObj = parseISO(event.date);
   const isToday = event.date === format(new Date(), 'yyyy-MM-dd');
 
-  const ATTENDANCE_OPTIONS: AttendanceStatus[] = ['present', 'absent', 'late', 'left_early'];
+  // Technicians who work this weekday but are not yet assigned to this event
+  const assignedIds = new Set(crew.map(c => c.technician_id));
+  const eventWeekday = dateObj.getDay();
+  const suggestedCrew = allTechnicians.filter(
+    t => (t.default_days ?? []).includes(eventWeekday) && !assignedIds.has(t.id)
+  );
 
   return (
     <div className="pb-6">
@@ -252,45 +271,59 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         </div>
       </div>
 
-      {/* MY ATTENDANCE */}
+      {/* ── CREW MANAGEMENT ── */}
       <div className="mx-4 mt-4">
-        <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wide mb-2 text-right">حضوري</h3>
-        <div className="bg-white rounded-2xl border p-4 shadow-sm">
-          {myAttendance ? (
-            <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-2">
+          <button
+            onClick={() => setShowEditSheet(true)}
+            className="flex items-center gap-1.5 text-xs font-bold text-[#008D8B]"
+          >
+            <UserPlus size={13} />
+            تعديل الطاقم
+          </button>
+          <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wide">
+            الفنيون المعينون ({crew.length})
+          </h3>
+        </div>
+
+        <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+          {crew.length === 0 ? (
+            <div className="p-4 text-center">
+              <p className="text-sm text-muted-foreground">لم يُعيَّن فنيون بعد.</p>
               <button
-                onClick={() => handleMyAttendance(myAttendance.status)}
-                disabled={attendanceLoading}
-                className="text-xs text-muted-foreground underline"
+                onClick={() => setShowEditSheet(true)}
+                className="mt-2 text-xs text-[#008D8B] font-bold underline"
               >
-                إزالة
+                إضافة فنيين
               </button>
-              <div className="flex items-center gap-3">
-                <div>
-                  <p className="font-bold text-sm text-right">{ATTENDANCE_LABELS[myAttendance.status]}</p>
-                  <p className="text-xs text-muted-foreground text-right">مُسجَّل</p>
-                </div>
-                <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', ATTENDANCE_COLORS[myAttendance.status])}>
-                  <CheckCircle2 size={20} />
-                </div>
-              </div>
             </div>
           ) : (
-            <div>
-              <p className="text-sm text-muted-foreground mb-3 text-right">سجّل حضورك لهذا الحدث:</p>
-              <div className="grid grid-cols-2 gap-2">
-                {ATTENDANCE_OPTIONS.map(status => (
-                  <button
-                    key={status}
-                    onClick={() => handleMyAttendance(status)}
-                    disabled={attendanceLoading}
-                    className={cn(
-                      'py-2.5 px-3 rounded-xl border text-sm font-bold transition-colors touch-target',
-                      ATTENDANCE_COLORS[status]
-                    )}
+            <div className="divide-y">
+              {crew.map(c => (
+                <div key={c.technician_id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 text-right min-w-0">
+                    <p className="text-sm font-bold truncate">{c.technician.name}</p>
+                    <p className="text-xs text-muted-foreground">{c.technician.role}</p>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-[#9EB2A6] flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                    {c.technician.name.charAt(0)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {suggestedCrew.length > 0 && (
+            <div className="border-t px-4 py-3 bg-amber-50/50">
+              <p className="text-xs font-bold text-amber-800 text-right mb-2">الفنيون المقترحون (غير مُعيَّنين)</p>
+              <div className="flex flex-wrap gap-1.5 justify-end">
+                {suggestedCrew.map(t => (
+                  <span
+                    key={t.id}
+                    className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200"
                   >
-                    {ATTENDANCE_LABELS[status]}
-                  </button>
+                    {t.name}
+                  </span>
                 ))}
               </div>
             </div>
@@ -298,14 +331,62 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         </div>
       </div>
 
-      {/* CREW ATTENDANCE */}
+      {/* ── MY ATTENDANCE ── */}
+      <div className="mx-4 mt-4">
+        <div className="flex items-center justify-between mb-2">
+          {myAttendance && (
+            <button
+              onClick={() => handleMyAttendance(myAttendance.status)}
+              disabled={attendanceLoading}
+              className="text-xs text-muted-foreground underline"
+            >
+              إزالة
+            </button>
+          )}
+          <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wide ms-auto">حضوري</h3>
+        </div>
+
+        <div className="bg-white rounded-2xl border p-4 shadow-sm">
+          {myAttendance ? (
+            <p className="text-xs text-muted-foreground text-right mb-3">
+              مُسجَّل:&nbsp;
+              <span className={cn('font-bold px-2 py-0.5 rounded-full border text-xs', ATTENDANCE_COLORS[myAttendance.status])}>
+                {ATTENDANCE_LABELS[myAttendance.status]}
+              </span>
+              &nbsp;— اضغط زراً آخر للتغيير
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground text-right mb-3">سجّل حضورك:</p>
+          )}
+
+          <div className="grid grid-cols-3 gap-2">
+            {ATTENDANCE_OPTIONS.map(status => (
+              <button
+                key={status}
+                onClick={() => handleMyAttendance(status)}
+                disabled={attendanceLoading}
+                className={cn(
+                  'py-2.5 px-2 rounded-xl border text-sm font-bold transition-colors touch-target',
+                  myAttendance?.status === status
+                    ? ATTENDANCE_ACTIVE_COLORS[status]
+                    : 'bg-white text-muted-foreground border-border'
+                )}
+              >
+                {ATTENDANCE_SHORT[status]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── CREW ATTENDANCE ── */}
       {crew.length > 0 && (
         <div className="mx-4 mt-4">
           <button
-            onClick={() => setShowCrewSection(v => !v)}
+            onClick={() => setShowCrewAttendance(v => !v)}
             className="w-full flex items-center justify-between mb-2"
           >
-            {showCrewSection
+            {showCrewAttendance
               ? <ChevronUp size={16} className="text-muted-foreground" />
               : <ChevronDown size={16} className="text-muted-foreground" />
             }
@@ -314,7 +395,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             </h3>
           </button>
 
-          {showCrewSection && (
+          {showCrewAttendance && (
             <div className="bg-white rounded-2xl border p-4 shadow-sm">
               {crew.map(c => (
                 <TechAttendanceRow
@@ -362,25 +443,16 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowCancelSheet(false)} />
           <div className="relative bg-white rounded-t-3xl px-4 pt-5 pb-10 space-y-3">
             <div className="flex items-center justify-between mb-1">
-              <button
-                onClick={() => setShowCancelSheet(false)}
-                className="w-8 h-8 rounded-full border flex items-center justify-center"
-              >
+              <button onClick={() => setShowCancelSheet(false)} className="w-8 h-8 rounded-full border flex items-center justify-center">
                 <X size={16} />
               </button>
               <h2 className="text-base font-bold">إلغاء الحدث</h2>
             </div>
-            <button
-              onClick={handleCancelThisOnly}
-              className="w-full text-right rounded-2xl border border-border bg-white p-4 active:bg-muted transition-colors"
-            >
+            <button onClick={handleCancelThisOnly} className="w-full text-right rounded-2xl border border-border bg-white p-4 active:bg-muted transition-colors">
               <p className="font-bold text-sm">إلغاء هذا اليوم فقط</p>
               <p className="text-xs text-muted-foreground mt-0.5">لا يؤثر على الأيام الأخرى في الجدول</p>
             </button>
-            <button
-              onClick={handleCancelFuture}
-              className="w-full text-right rounded-2xl border border-red-200 bg-red-50 p-4 active:bg-red-100 transition-colors"
-            >
+            <button onClick={handleCancelFuture} className="w-full text-right rounded-2xl border border-red-200 bg-red-50 p-4 active:bg-red-100 transition-colors">
               <p className="font-bold text-sm text-red-700">إلغاء جميع الأيام القادمة</p>
               <p className="text-xs text-muted-foreground mt-0.5">إلغاء هذا الحدث وجميع تكراراته المستقبلية</p>
             </button>
@@ -394,10 +466,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowDeleteSheet(false)} />
           <div className="relative bg-white rounded-t-3xl px-4 pt-5 pb-10 space-y-3">
             <div className="flex items-center justify-between mb-1">
-              <button
-                onClick={() => setShowDeleteSheet(false)}
-                className="w-8 h-8 rounded-full border flex items-center justify-center"
-              >
+              <button onClick={() => setShowDeleteSheet(false)} className="w-8 h-8 rounded-full border flex items-center justify-center">
                 <X size={16} />
               </button>
               <div className="text-right">
@@ -405,17 +474,11 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                 <p className="text-xs text-muted-foreground">هل أنت متأكد؟ لا يمكن التراجع</p>
               </div>
             </div>
-            <button
-              onClick={handleDeleteSingle}
-              className="w-full text-right rounded-2xl border border-red-200 bg-red-50 p-4 active:bg-red-100 transition-colors"
-            >
+            <button onClick={handleDeleteSingle} className="w-full text-right rounded-2xl border border-red-200 bg-red-50 p-4 active:bg-red-100 transition-colors">
               <p className="font-bold text-sm text-red-700">حذف هذا الحدث فقط</p>
               <p className="text-xs text-muted-foreground mt-0.5">يُحذف هذا اليوم فقط ويبقى الجدول سارياً</p>
             </button>
-            <button
-              onClick={handleDeleteFuture}
-              className="w-full text-right rounded-2xl border border-red-300 bg-red-100 p-4 active:bg-red-200 transition-colors"
-            >
+            <button onClick={handleDeleteFuture} className="w-full text-right rounded-2xl border border-red-300 bg-red-100 p-4 active:bg-red-200 transition-colors">
               <p className="font-bold text-sm text-red-700">حذف هذا الحدث وجميع الأحداث القادمة</p>
               <p className="text-xs text-muted-foreground mt-0.5">تُحذف جميع التكرارات المستقبلية بشكل نهائي</p>
             </button>

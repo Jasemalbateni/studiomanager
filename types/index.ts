@@ -1,7 +1,7 @@
 export type Category = 'bulletin' | 'short_briefing' | 'program';
 export type BroadcastMode = 'live' | 'recording';
 export type RecurrenceType = 'one_time' | 'daily' | 'weekdays';
-export type AttendanceStatus = 'present' | 'absent' | 'late' | 'left_early';
+export type AttendanceStatus = 'present' | 'absent' | 'late' | 'left_early' | 'on_leave' | 'excused';
 
 export type TechnicianStatus = 'active' | 'on_leave' | 'left';
 
@@ -129,6 +129,8 @@ export interface TechnicianStats {
   absent: number;
   late: number;
   left_early: number;
+  on_leave: number;
+  excused: number;
   bulletin: number;
   short_briefing: number;
   program: number;
@@ -149,4 +151,6 @@ export interface MyStats {
   absent: number;
   late: number;
   left_early: number;
+  on_leave: number;
+  excused: number;
 }
